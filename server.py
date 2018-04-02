@@ -1,14 +1,29 @@
 #!/usr/bin/env python
 
 import sys
+import json
+import socket
 import spotipy
 import spotipy.util
+
+if len(sys.argv) != 2:
+    sys.stderr.write('Usage: %s <port>\n' % sys.argv[0])
+    sys.exit()
+
+port = int(sys.argv[1])
 
 # --------------------
 # perform Spotify setup
 # --------------------
-
 PLAYLIST_NAME = 'networks-playlist'
+SEED_GENRES = ['work-out', 'summer', 'club']
+
+def gen_songs():
+    """Generate pairs of songs to be voted on
+    """
+    recs = sp.recommendations(seed_genres=SEED_GENRES, limit=20)['tracks']
+    for rec in recs:
+        yield rec
 
 # prompt for username and attempt authentication
 username = raw_input('What is your Spotify username?\n> ') 
@@ -18,7 +33,7 @@ token = spotipy.util.prompt_for_user_token(username, scope, redirect_uri=redirec
 
 # if authentication failed
 if not token:
-    sys.stderr.write('Could not authenticate')
+    sys.stderr.write('Could not authenticate user')
     sys.exit()
 
 # initiate Spotify client
@@ -41,5 +56,15 @@ sp.start_playback(context_uri=pl['uri'])
 # --------------------
 # enter loop
 # --------------------
+MAX_DATA = 4096
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# NOTE: empty string here indicates INADDR_ANY
+server_address = ('', port)
+sock.bind(server_address)
 
-# sp.user_playlist_add_tracks(user, pl['id'])
+# sp.user_playlist_add_tracks(user, pl['id'], tracks)
+
+while True:
+    data, address = sock.recvfrom(MAX_DATA)
+    if data:
+        sent = sock.sendto(data, address)
