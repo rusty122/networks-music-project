@@ -2,6 +2,7 @@
 
 import sys
 import json
+import struct
 import socket
 import spotipy
 import spotipy.util
@@ -57,6 +58,12 @@ sp.start_playback(context_uri=pl['uri'])
 # enter loop
 # --------------------
 MAX_DATA = 4096
+
+REQUEST_MSG = 1
+VOTE_MSG = 2
+UNAVAIL_MSG = 3
+OPTIONS_MSG = 4
+
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # NOTE: empty string here indicates INADDR_ANY
 server_address = ('', port)
@@ -66,5 +73,14 @@ sock.bind(server_address)
 
 while True:
     data, address = sock.recvfrom(MAX_DATA)
-    if data:
-        sent = sock.sendto(data, address)
+    if len(data) < 1:
+        continue
+    msg = data[0]
+    if msg == REQUEST_MSG:
+        print "got a request message"
+    elif msg == VOTE_MSG:
+        # TODO: tally votes
+        print "got a vote message"
+
+    response = struct.pack('!b', UNAVAIL_MSG)
+    sent = sock.sendto(response, address)
