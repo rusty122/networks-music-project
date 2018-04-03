@@ -17,14 +17,18 @@ port = int(sys.argv[1])
 # perform Spotify setup
 # --------------------
 PLAYLIST_NAME = 'networks-playlist'
-SEED_GENRES = ['work-out', 'summer', 'club']
 
-def gen_songs():
-    """Generate pairs of songs to be voted on
+def gen_songs(n):
     """
-    recs = sp.recommendations(seed_genres=SEED_GENRES, limit=20)['tracks']
-    for rec in recs:
-        yield rec
+    Endlessly generate n-tuples of Spotify songs
+    """
+    SEED_GENRES = ['work-out', 'summer', 'club']
+    while True:
+        recs = sp.recommendations(seed_genres=SEED_GENRES, limit=20)['tracks']
+        for i in xrange(0, len(recs), n):
+            group = tuple(recs[i:i+n])
+            if len(group) == n:
+                yield group
 
 # prompt for username and attempt authentication
 username = raw_input('What is your Spotify username?\n> ') 
@@ -65,16 +69,21 @@ UNAVAIL_MSG = 3
 OPTIONS_MSG = 4
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# NOTE: empty string here indicates INADDR_ANY
+# the empty string here indicates INADDR_ANY for the server address
 server_address = ('', port)
 sock.bind(server_address)
 
 # sp.user_playlist_add_tracks(user, pl['id'], tracks)
 
 while True:
+    songs = gen_songs(2)
     data, address = sock.recvfrom(MAX_DATA)
+
     if len(data) < 1:
+        sys.stderr.write("Read some empty data\n")
         continue
+
+    # examine the first byte to figure out what message type was received
     msg = data[0]
     if msg == REQUEST_MSG:
         print "got a request message"
