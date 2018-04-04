@@ -5,7 +5,6 @@ import os
 import socket
 import string
 import time
-# import struct
 from struct import *
 import json
 import signal
@@ -109,11 +108,8 @@ def countDown():
 
 
 def vote(sock, sockData, optionsJSON):
-	# Thread(target = timeoutVote).start()
-	# Thread(target = countDown).start()
-
-
-	# options  = json.loads(optionsJSON)
+	# options = "[{{'song':'song1'}, {'artist':'artist1'}}]"
+	options  = json.loads(optionsJSON)
 	timeLeft = 29
 
 	vote = ''
@@ -138,12 +134,16 @@ def vote(sock, sockData, optionsJSON):
 
 
 def play(sock, sockData):
+	print "App is now running (play())"
 	sock.settimeout(None)
-	data, _ = recvfrom(512)
-	msgType, optionsJSON = unpack('cs', data)
+	while True:
+		data, _ = sock.recvfrom(512)
 
-	if msgType == OPTIONS:
-		vote(sock, sockData, optionsJSON)
+		if len(data) > 1:
+			msgType, optionsJSON = unpack('cs', data)
+
+			if msgType == OPTIONS:
+				vote(sock, sockData, optionsJSON)
 
 
 
@@ -158,7 +158,8 @@ def register(sock, sockData):
 
 	while nTimeouts < MAX_TIMEOUTS:
 		try:
-			data, _ = recvfrom(1)
+			print "Calling recvfrom()"
+			data, _ = sock.recvfrom(1)
 			msgType = unpack('c', data)[0]
 			print "Message type:", msgType
 			if msgType == ACK:
@@ -178,7 +179,7 @@ def register(sock, sockData):
 
 def run(sock, sockData):
 	# vote(sock, sockData, 'hey')
-	sock.settimeout(3.0)
+	sock.settimeout(5.0)
 
 	if not register(sock, sockData):
 		print("Exceeded number of timeouts registering. Exiting program.")
