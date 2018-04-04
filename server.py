@@ -68,30 +68,23 @@ server_address = ('', port)
 sock.bind(server_address)
 
 MAX_DATA = 4096
-REGISTER_MSG = 1
-ACK_MSG = 2
-SONGS_MSG = 3
-VOTE_MSG = 4
-UNREGISTER_MSG = 5
+REGISTER_MSG = "1"
+ACK_MSG = "2"
+SONGS_MSG = "3"
+VOTE_MSG = "4"
+UNREGISTER_MSG = "5"
 
 # --------------------
 # setup data stuctures
 # --------------------
-clients = []
-client_lock = threading.Lock()
-
-songs = gen_songs(2)
-initial_vote = next(songs)
-tally = {
-    initial_vote[0]['uri']: 0,
-    initial_vote[1]['uri']: 0,
-}
-tally_lock = threading.Lock()
+#songs = gen_songs(2)
 
 # sp.user_playlist_add_tracks(user, pl['id'], tracks)
 
 while True:
     data, address = sock.recvfrom(MAX_DATA)
+    sys.stderr.write("just received data\n")
+
     if len(data) < 1:
         sys.stderr.write("Read empty data\n")
         continue
@@ -99,25 +92,16 @@ while True:
     # examine the first byte to figure out what message type was received
     msg = data[0]
     if msg == REGISTER_MSG:
-        client_lock.acquire()
-        clients.append(address)
-        client_lock.release()
-        sock.sendto(ACK_MSG, address)
+        sys.stderr.write("Got a register message\n")
     elif msg == VOTE_MSG:
-        tally_lock.acquire()
+        sys.stderr.write("Got a vote message\n")
         uri = data[1:]
-        if uri in tally:
-            tally[uri] += 1
-        else:
-            sys.stderr.write("Client tried voting on invalid song\n")
-        tally_lock.release()
     elif msg == UNREGISTER_MSG:
-        client_lock.acquire()
-        try:
-            clients.remove(address)
-        except ValueError:
-            pass
-        client_lock.release()
+        sys.stderr.write("Got an unregister message\n")
+        pass
     else:
         sys.stderr.write("Unrecognized message type: %d\n", msg)
         continue
+    print address
+    sys.stderr.write("About to send ACK\n")
+    sock.sendto(ACK_MSG, address)

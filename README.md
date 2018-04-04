@@ -6,7 +6,7 @@ This project requires a version of the spotipy library that is unavailable on
 PyPI. To install it (from a virtual environment if applicable):
 ```
 $ git clone https://github.com/plamere/spotipy.git
-$ python spotipy/setup.py install
+$ cd spotipy && python spotipy/setup.py install
 ```
 
 ## Server API Credentials
