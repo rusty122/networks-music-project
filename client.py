@@ -17,7 +17,7 @@ from threading import Thread
 # Request types
 REGISTER   = '1'
 ACK        = '2'
-OPTION     = '3'
+OPTIONS    = '3'
 VOTE       = '4'
 UNREGISTER = '5'
 
@@ -27,7 +27,7 @@ TIMEOUT_SECS  = 3
 
 def interrupted(signum, frame):
 	# print ''
-    print("Didn't respond within 1 seconds")
+    print("Didn't respond in time.")
 
 signal.signal(signal.SIGALRM, interrupted)
 
@@ -39,42 +39,28 @@ def input():
         # timeout
         return
 
-# set alarm
-# signal.alarm(1) # seconds of timeout
-# s = input()
-# disable the alarm after success
-# signal.alarm(0)
-# print 'You typed', s
-
-
-
-
 
 def displayOptions(options):
-	print 'Options are:\nA) Ed Sheeran - Shape Of You\nB) Kanye West - Runaway\nC) Nicky Jam - X\n'
+	longLength, longName, longArtist = 0, 0, 0
+	extraSpace = 3
+	for song in options:
+		mins = str(int(song['length']) / 60)
+		secs = string.rjust(str(int(song['length']) % 60), 2, '0')
+		song['length'] = mins + ':' + secs
 
+	for song in options:
+		longLen = max(longLength, len(song['length']))
+		longName = max(longName, len(song['name']))
+		longArtist = max(longArtist, len(song['artist']))
 
-# def vote(sock, sockData, optionsJSON):
-# 	# options  = json.loads(optionsJSON)
-# 	timeLeft = 29
+	print "   {} {} {}".format(string.ljust('Name', longName + extraSpace), string.ljust('Artist', longArtist + extraSpace), string.ljust('Length', longLength + extraSpace))
 
-# 	vote = ''
+	i = 0
+	indices = ['a', 'b', 'c']
+	for song in options:
+		print "{}) {} {} {}".format(indices[i], string.ljust(song['name'], longName + extraSpace), string.ljust(song['artist'], longArtist + extraSpace), string.ljust(song['length'], longLength + extraSpace))
+		i += 1
 
-# 	while (timeLeft > 0):
-# 		signal.alarm(1)
-# 		# os.system('clear')
-# 		displayOptions('') # pass options
-# 		print "Type 'A', 'B' or 'C' to vote for an option. You have {} seconds to choose!".format(timeLeft)
-# 		vote = input()
-
-# 		if not vote:
-# 			print "Hasn't voted"
-# 			timeLeft -= 1
-# 			continue
-# 		else:
-# 			print "Voted for option {}. Great choice! Stay tuned for the next options :)".format(vote)
-# 			return vote
-# 	return ''
 
 voted = False
 count = 10
@@ -98,52 +84,66 @@ def countDown():
 	while not voted:
   		os.system('clear')
   		displayOptions('')
-  		print "Type 'A', 'B' or 'C' to vote for an option. You have {} seconds to choose!".format(count)
+  		print "Type 'a', 'b' or 'c' to vote for an option. You have {} seconds to choose!".format(count)
     # print count
     	count -= 1
     	sleep(1)
 
-# Thread(target = timeoutVote).start()
-# Thread(target = countDown).start()
-
 
 def vote(sock, sockData, optionsJSON):
-	# options = "[{{'song':'song1'}, {'artist':'artist1'}}]"
+	print optionsJSON
+	# optionsJSON = '[{"name":"Perfect","artist":"Ed Sheeran","uri":"someUriA","length":"213"},{"name":"Hello","artist":"Adele","uri":"someUriB","length":"182"},{"name":"Up&Up","artist":"Coldplay","uri":"someUriC","length":"405"}]'
 	options  = json.loads(optionsJSON)
-	timeLeft = 29
+	timeLeft = 30
 
 	vote = ''
 
-	while (timeLeft > 0):
-		signal.alarm(1)
-		# os.system('clear')
-		displayOptions('') # pass options
-		print "Type 'A', 'B' or 'C' to vote for an option. You have {} seconds to choose!".format(timeLeft)
-		try:
-			signal.alarm(1)
-			vote = input()
-			print "Voted for option {}. Great choice! Stay tuned for the next options :)".format(vote)
-			return vote
+	
+	signal.alarm(30)
+	os.system('clear')
+	displayOptions(options) # pass options
+	print "Type 'a', 'b' or 'c' to vote for an option. You have {} seconds to choose!".format(timeLeft)
+	try:
+		signal.alarm(30)
+		vote = input()
+		print "Voted for option {}. Great choice! Stay tuned for the next options :)".format(vote)
+		if vote == 'a':
+			return options[0]['uri']
+		elif vote == 'b':
+			return options[1]['uri']
+		elif vote == 'c':
+			return options[2]['uri']
+		else:
+			print "Vote is not valid"
+		return vote
 
-		except:
-			print "Hasn't voted"
-			timeLeft -= 1
-			continue			
+	except:
+		print "Didn't vote."
 	return ''
 
 
 
 def play(sock, sockData):
 	print "App is now running (play())"
-	sock.settimeout(None)
+	sock.settimeout(3600)
+
 	while True:
-		data, _ = sock.recvfrom(512)
+		sock.settimeout(3600)
+		try:
+			data, _ = sock.recvfrom(512)
+			print "Data:"
+			print data
+			if len(data) > 1:
+				msgType = data[0]
+				optionsJSON = data[1:]
 
-		if len(data) > 1:
-			msgType, optionsJSON = unpack('cs', data)
-
-			if msgType == OPTIONS:
-				vote(sock, sockData, optionsJSON)
+				if msgType == OPTIONS:
+					result = vote(sock, sockData, optionsJSON)
+					print result
+					msg = VOTE + result
+					sock.sendto(msg, sockData)
+		except:
+			continue
 
 
 
@@ -178,7 +178,6 @@ def register(sock, sockData):
 
 
 def run(sock, sockData):
-	# vote(sock, sockData, 'hey')
 	sock.settimeout(5.0)
 
 	if not register(sock, sockData):
