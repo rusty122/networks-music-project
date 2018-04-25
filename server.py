@@ -9,12 +9,16 @@ import threading
 import collections
 import spotipy
 import spotipy.util
+import pprint
 
 if len(sys.argv) != 2:
     sys.stderr.write('Usage: %s <port>\n' % sys.argv[0])
     sys.exit()
 
 port = int(sys.argv[1])
+tstamp = None
+options_message = None
+vote_length = None
 
 
 # --------------------
@@ -27,17 +31,17 @@ def gen_songs():
     Endlessly generate Spotify songs
     """
     # buffer a multiple of 3 since we serve three choices per vote
-    BUFFER = 40
+    BUFFER = 100
     SEED_GENRES = ['work-out', 'summer', 'club']
     while True:
-        recs = sp.recommendations(seed_genres=SEED_GENRES, limit=30)['tracks']
+        recs = sp.recommendations(seed_genres=SEED_GENRES, limit=BUFFER)['tracks']
         # sort by song length for demo
         recs = sorted(recs, key=lambda s: s['duration_ms'])
         for song in recs:
             yield song
 
 # prompt for username and attempt authentication
-username = raw_input('What is your Spotify username?\n> ') 
+username = raw_input('What is your Spotify username?\n> ')
 scope = 'user-modify-playback-state playlist-modify-public user-modify-playback-state user-modify-playback-state'
 redirect = 'http://localhost/'
 token = spotipy.util.prompt_for_user_token(username, scope, redirect_uri=redirect)
@@ -83,7 +87,7 @@ UNREGISTER_MSG = "5"
 # setup data stuctures
 # --------------------
 songs = gen_songs()
-clients = []
+clients = {}
 tally = collections.Counter()
 client_lock = threading.Lock()
 tally_lock = threading.Lock()
@@ -91,35 +95,45 @@ sock_write_lock = threading.Lock()
 
 def parse_song(s):
     d = {
-        'artist': s['album']['artists'][0]['name'],
-        'name':   s['name'],
-        'length': s['duration_ms'] / 1000,
-        'uri':    s['uri'],
-            
+        'artist':  s['album']['artists'][0]['name'],
+        'name':    s['name'],
+        'length':  s['duration_ms'] / 1000.0,
+        'uri':     s['uri'],
     }
     return d
 
 def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally_lock, spot):
+    global tstamp
+    global options_message
+    global vote_length
     winner = None
 
-    wait = 30
+    # use 45 seconds for the first time to let clients attach
+    vote_length = 45
     while True:
         s1 = parse_song(next(songs))
         s2 = parse_song(next(songs))
         s3 = parse_song(next(songs))
 
-        options_message = json.dumps([s1, s2, s3]) 
+        options_message = json.dumps({'songs': [s1, s2, s3],
+                                      'deadline': time.time() + vote_length})
+
         with tally_lock:
+            # clear tally and set up new entries
             tally.clear()
-            tally.update([s1['uri'], s2['uri'], s3['uri']])
+            tally[s1['uri']] = 0
+            tally[s2['uri']] = 0
+            tally[s3['uri']] = 0
+
         with client_lock, sock_write_lock:
+            tstamp = time.time()
             for client in clients:
                 sock.sendto(SONGS_MSG + options_message, client)
-                sys.stderr.write("Just sent songs to client\n")
+                sys.stderr.write("Just sent options to a client\n")
 
-        # otherwise, sleep for time of winner
-        sys.stderr.write("Sleeping for %d seconds\n" % (wait))
-        time.sleep(wait)
+        # sleep during the voting session
+        sys.stderr.write("Sleeping during the vote\n")
+        time.sleep(vote_length)
 
         with tally_lock:
             sys.stderr.write("Deciding the winner\n")
@@ -131,13 +145,14 @@ def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally
                 winner = s2
             else:
                 winner = s3
-            sys.stderr.write("Song %s has won with %d votes\n" % (winner, votes))
+            pprint.pprint(tally)
+            sys.stderr.write("Song %s has won with %f votes\n" % (winner, votes))
 
-        wait = winner['length']
-
-        sys.stderr.write("trying to add track %s\n" % (winner['uri'],))
-        sys.stderr.write("playlist id: %s\n" % (pl['id'],))
+        # change back to 30 seconds after the first vote
+        vote_length = 30
         spot.user_playlist_add_tracks(user, pl['id'], [winner['uri']])
+        sys.stderr.write("Sleeping until next vote\n")
+        time.sleep(winner['length'] - vote_length)
 
 
 t = threading.Thread(target=disc_jockey, args=(sock, songs, sock_write_lock, clients, client_lock, tally, tally_lock, sp))
@@ -163,15 +178,18 @@ while True:
             pass
 
         with client_lock, sock_write_lock:
-            clients.append(address)
+            clients[address] = delay
             sock.sendto(ACK_MSG, address)
             sys.stderr.write("Sent ACK message\n")
+        with client_lock, sock_write_lock:
+            sock.sendto(SONGS_MSG + options_message, address)
     elif msg == VOTE_MSG:
         sys.stderr.write("Got a vote message\n")
         uri = data[1:]
         with tally_lock:
+            votetime = time.time() - tstamp
             if uri in tally:
-                tally[uri] += 1
+                tally[uri] += (30 - votetime + clients[address]) / 30.0
                 sys.stderr.write("Recorded vote\n")
             else:
                 sys.stderr.write("uri not found in tally\n")
@@ -179,7 +197,7 @@ while True:
         sys.stderr.write("Got an unregister message\n")
         with client_lock:
             try:
-                clients.remove(address)
+                clients.pop(address)
                 sys.stderr.write("Removed client from list\n")
             except ValueError:
                 sys.stderr.write("Could not remove client\n")
