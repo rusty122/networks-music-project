@@ -177,7 +177,7 @@ def play(sock, sockData):
 					options = json.loads(data[1:])
 
 					if (options['deadline'] - time.time()) < 0:
-						print "Oops! You're a bit late. Don't worry, I'll let you know when the \nnext session comes up!"
+						print "There's no voting sessions at the moment. \nI'll let you know when the next session comes up!"
 						continue
 
 					result = vote(sock, sockData, options)
