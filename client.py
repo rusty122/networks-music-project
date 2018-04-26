@@ -122,6 +122,7 @@ def vote(sock, sockData, options):
 	secsLeft = timeLeft % 60
 
 
+
 	vote = ''
 	letters = {'a', 'b', 'c'}
 	
