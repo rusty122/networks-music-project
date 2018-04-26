@@ -75,7 +75,7 @@ def displayOptions(options):
 		longName = max(longName, len(song['name']))
 		longArtist = max(longArtist, len(song['artist']))
 
-	print "   {} {} {}".format(string.ljust('Name', longName + extraSpace), string.ljust('Artist', longArtist + extraSpace), string.ljust('Length', longLength + extraSpace))
+	print "\n   {} {} {}".format(string.ljust('Name', longName + extraSpace), string.ljust('Artist', longArtist + extraSpace), string.ljust('Length', longLength + extraSpace))
 
 	i = 0
 	indices = ['a', 'b', 'c']
@@ -106,25 +106,35 @@ def countDown():
 	while not voted:
   		os.system('clear')
   		displayOptions('')
-  		print "Type 'a', 'b' or 'c' to vote for an option. You have {} seconds to choose!".format(count)
+  		print "\nType 'a', 'b' or 'c' to vote for an option. You have {} seconds to choose!".format(count)
     # print count
     	count -= 1
     	sleep(1)
 
 
-def vote(sock, sockData, optionsJSON):
-	print optionsJSON
+def vote(sock, sockData, options):
+	# print optionsJSON
 	# optionsJSON = '[{"name":"Perfect","artist":"Ed Sheeran","uri":"someUriA","length":"213"},{"name":"Hello","artist":"Adele","uri":"someUriB","length":"182"},{"name":"Up&Up","artist":"Coldplay","uri":"someUriC","length":"405"}]'
-	options  = json.loads(optionsJSON)
-	timeLeft = 30
+	# options  = json.loads(optionsJSON)
+	# timeLeft = 30
+	timeLeft = int(options['deadline'] - time.time())
+	minsLeft = timeLeft / 60
+	secsLeft = timeLeft % 60
+
 
 	vote = ''
 	letters = {'a', 'b', 'c'}
 	
 	# signal.alarm(30)
 	os.system('clear')
-	displayOptions(options) # pass options
-	print "Type 'a', 'b' or 'c' to vote for an option. You have {} seconds to choose!".format(timeLeft)
+	displayOptions(options['songs']) # pass options
+	print "Type 'a', 'b' or 'c' to vote for an option."
+
+	if minsLeft > 0:
+		print "You have {}m and {}s to choose!".format(minsLeft, secsLeft)
+	else:
+		print "You have {} seconds to choose!".format(secsLeft)
+
 	try:
 		# signal.alarm(30)
 		vote = raw_input()
@@ -134,11 +144,11 @@ def vote(sock, sockData, optionsJSON):
 
 		print "Voted for option '{}'. Great choice! Stay tuned for the next options :)".format(vote)
 		if vote == 'a':
-			return options[0]['uri']
+			return options['songs'][0]['uri']
 		elif vote == 'b':
-			return options[1]['uri']
+			return options['songs'][1]['uri']
 		elif vote == 'c':
-			return options[2]['uri']
+			return options['songs'][2]['uri']
 		else:
 			print "Vote is not valid"
 		return vote
@@ -150,22 +160,27 @@ def vote(sock, sockData, optionsJSON):
 
 
 def play(sock, sockData):
-	print "App is now running (play())"
+	print "Waiting for the next voting session...\n"
 	# sock.settimeout(3600)
 
 	while True:
 		sock.settimeout(3600)
 		try:
 			data, _ = sock.recvfrom(512)
-			print "Data:"
-			print data
+			# print "Data:"
+			# print data
 			if len(data) > 1:
 				msgType = data[0]
-				optionsJSON = data[1:]
 
 				if msgType == OPTIONS:
-					result = vote(sock, sockData, optionsJSON)
-					print result
+					options = json.loads(data[1:])
+
+					if (options['deadline'] - time.time()) < 0:
+						print "Oops! You're a bit late. Don't worry, I'll let you know when the \nnext session comes up!"
+						continue
+
+					result = vote(sock, sockData, options)
+					# print result
 					msg = VOTE + result
 					time.sleep(RTT)
 					sock.sendto(msg, sockData)
@@ -223,30 +238,33 @@ def run(sock, sockData):
 
 def main():
 	if len(sys.argv) < 3:
-		print "Usage: python client.py [Destination IP] [Destination PORT]"
-		sys.exit(0)
+		# print "Usage: python client.py [Destination IP] [Destination PORT]"
+		# sys.exit(0)
+		UDP_IP_ADDRESS = 'comp112-04'
+		UDP_PORT_NO = 9240
+	else:
+		UDP_IP_ADDRESS = sys.argv[1]
+		UDP_PORT_NO = int(sys.argv[2])
 
 	os.system('clear')
 	print partify
 
 	global RTT
 	RTT = 0
-
-	UDP_IP_ADDRESS = sys.argv[1]
-	UDP_PORT_NO = int(sys.argv[2])
-	# if len(sys.argv) == 4:
-	# 	RTT = float(sys.argv[3])
-	# 	print "Simulating connection with RTT of {} seconds.".format(RTT)
+# 
+	# UDP_IP_ADDRESS = sys.argv[1]
+	# UDP_PORT_NO = int(sys.argv[2])
+	
 
 	print "Hey there Partifier, and welcome to the best and most entertaining \nway to make a collaborative playlist with your friends.\n"
 	print "Our application uses clients' RTT to make up for user \ndelays when computing the 'weight' of their vote.\n"
 
-	print "Testing input timeout. Input a string, you have 5 seconds:\n"
+	# print "Testing input timeout. Input a string, you have 5 seconds:\n"
 
 	# signal.alarm(5)
-	aString = ''
-	aString = raw_input_with_timeout(5)
-	print "aString is {}\n"
+	# aString = ''
+	# aString = raw_input_with_timeout(5)
+	# print "aString is {}\n"
 
 	RTT = float(raw_input("For the purpose of this demo, what RTT (in seconds, between 0 and 10) \nwould you like us to simulate for you? "))
 
