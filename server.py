@@ -11,16 +11,16 @@ import spotipy
 import spotipy.util
 import pprint
 
+# setup command line arguments
 if len(sys.argv) != 2:
     sys.stderr.write('Usage: %s <port>\n' % sys.argv[0])
     sys.exit()
 
+# parse port and set some global variables
 port = int(sys.argv[1])
 tstamp = None
 options_message = None
 vote_length = None
-
-
 
 def is_ascii(s):
     return all(ord(c) < 128 for c in s)
@@ -29,6 +29,15 @@ def is_ascii(s):
 # perform Spotify setup
 # --------------------
 PLAYLIST_NAME = 'networks-playlist'
+
+def parse_song(s):
+    d = {
+        'artist':  s['album']['artists'][0]['name'],
+        'name':    s['name'],
+        'length':  s['duration_ms'] / 1000.0,
+        'uri':     s['uri'],
+    }
+    return d
 
 def gen_songs():
     """
@@ -42,15 +51,19 @@ def gen_songs():
         # sort by song length for demo
         recs = sorted(recs, key=lambda s: s['duration_ms'])
         for song in recs:
+            data = song['name'] + song['album']['artists'][0]['name']
+            if not is_ascii(data):
+                sys.stderr.write("skipping song with non-ascii\n")
+                continue
             yield song
 
-# prompt for username and attempt authentication
+# prompt for username and attempt Spotify authentication
 username = raw_input('What is your Spotify username?\n> ')
 scope = 'user-modify-playback-state playlist-modify-public user-modify-playback-state user-modify-playback-state'
 redirect = 'http://localhost/'
 token = spotipy.util.prompt_for_user_token(username, scope, redirect_uri=redirect)
 
-# if authentication failed
+# exit if authentication failed
 if not token:
     sys.stderr.write('Could not authenticate user')
     sys.exit()
@@ -68,18 +81,20 @@ if playlists:
 else:
     pl = sp.user_playlist_create(user, PLAYLIST_NAME)
 
-# start or resume the playlist
+# start/resume the playlist
 sp.start_playback(context_uri=pl['uri'])
 
 
 # --------------------
-# setup socket
+# socket setup 
 # --------------------
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # the empty string here indicates INADDR_ANY for the server address
 server_address = ('', port)
 sock.bind(server_address)
 
+# define constants for application messages
+# NOTE: would be a good place for an enum if Python had strong support for them 
 MAX_DATA = 4096
 REGISTER_MSG = "1"
 ACK_MSG = "2"
@@ -88,7 +103,7 @@ VOTE_MSG = "4"
 UNREGISTER_MSG = "5"
 
 # --------------------
-# setup data stuctures
+# setup shared data
 # --------------------
 songs = gen_songs()
 clients = {}
@@ -97,22 +112,15 @@ client_lock = threading.Lock()
 tally_lock = threading.Lock()
 sock_write_lock = threading.Lock()
 
-def parse_song(s):
-    d = {
-        'artist':  s['album']['artists'][0]['name'],
-        'name':    s['name'],
-        'length':  s['duration_ms'] / 1000.0,
-        'uri':     s['uri'],
-    }
-    return d
 
+# threaded function that sends out song candidates to clients
 def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally_lock, spot):
     global tstamp
     global options_message
     global vote_length
     winner = None
 
-    # use 45 seconds for the first time to let clients attach
+    # use 45 seconds for the first vote to let clients attach
     vote_length = 45
 
     while True:
@@ -124,7 +132,7 @@ def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally
                                       'deadline': time.time() + vote_length})
 
         with tally_lock:
-            # clear tally and set up new entries
+            # clear Counter and set up new entries
             tally.clear()
             tally[s1['uri']] = 0
             tally[s2['uri']] = 0
@@ -150,10 +158,10 @@ def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally
                 winner = s2
             else:
                 winner = s3
-            pprint.pprint(tally)
+            # pprint.pprint(tally)
             for identifier, score in tally.iteritems():
-                sys.stderr.write("%s: %f" % (identifier, score))
-            sys.stderr.write("Song %s has won with %f votes\n" % (winner, votes))
+                sys.stderr.write("%s: %f\n" % (identifier, score))
+            sys.stderr.write('Song "%s" has won with %f votes\n' % (winner['name'], votes))
 
         # change back to 30 seconds after the first vote
         vote_length = 30
