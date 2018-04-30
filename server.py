@@ -21,6 +21,10 @@ options_message = None
 vote_length = None
 
 
+
+def is_ascii(s):
+    return all(ord(c) < 128 for c in s)
+
 # --------------------
 # perform Spotify setup
 # --------------------
@@ -110,6 +114,7 @@ def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally
 
     # use 45 seconds for the first time to let clients attach
     vote_length = 45
+
     while True:
         s1 = parse_song(next(songs))
         s2 = parse_song(next(songs))
@@ -146,6 +151,8 @@ def disc_jockey(sock, songs, sock_write_lock, clients, client_lock, tally, tally
             else:
                 winner = s3
             pprint.pprint(tally)
+            for identifier, score in tally.iteritems():
+                sys.stderr.write("%s: %f" % (identifier, score))
             sys.stderr.write("Song %s has won with %f votes\n" % (winner, votes))
 
         # change back to 30 seconds after the first vote
@@ -160,7 +167,6 @@ t.start()
 
 while True:
     data, address = sock.recvfrom(MAX_DATA)
-    sys.stderr.write("just received data\n")
 
     if len(data) < 1:
         sys.stderr.write("Read empty data\n")
@@ -169,32 +175,29 @@ while True:
     # examine the first byte to figure out what message type was received
     msg = data[0]
     if msg == REGISTER_MSG:
-        sys.stderr.write("Got a register message\n")
         delay = 0.0
         try:
             delay = float(data[1:])
-            print "Read in a delay of %f" % delay
+            sys.stderr.write("Registering new client with a %f sec delay\n" % delay)
         except:
             pass
 
         with client_lock, sock_write_lock:
             clients[address] = delay
             sock.sendto(ACK_MSG, address)
-            sys.stderr.write("Sent ACK message\n")
         with client_lock, sock_write_lock:
             sock.sendto(SONGS_MSG + options_message, address)
     elif msg == VOTE_MSG:
-        sys.stderr.write("Got a vote message\n")
         uri = data[1:]
         with tally_lock:
             votetime = time.time() - tstamp
             if uri in tally:
-                tally[uri] += (30 - votetime + clients[address]) / 30.0
-                sys.stderr.write("Recorded vote\n")
+                score = (vote_length - votetime + clients[address]) / float(vote_length)
+                tally[uri] += max(score, 0)
+                sys.stderr.write("Recorded %f votes for %s\n" % (score, uri))
             else:
-                sys.stderr.write("uri not found in tally\n")
+                sys.stderr.write("A URI not found in tally\n")
     elif msg == UNREGISTER_MSG:
-        sys.stderr.write("Got an unregister message\n")
         with client_lock:
             try:
                 clients.pop(address)
